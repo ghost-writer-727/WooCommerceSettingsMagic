@@ -182,7 +182,7 @@ class WooCommerceSettingsMagic
                 default:
                 // Here we must set defaults for various field types to match what appears when first loaded up, because defaults are used when generating the $settings_cache array. This way, what is visible will match the actual value returned when getting settings via this class, even prior to the first click of the "Save Changes" button.
                     if( $field['type'] == 'select' ){
-                        $field['default'] = $field['default'] ?? '';
+                        $field['default'] = $field['default'] ?? false;
                         $field['options'] = $field['options'] ?? [];
 
                         if( $field['select2'] ?? false ){
@@ -208,8 +208,7 @@ class WooCommerceSettingsMagic
                             }
                             
                             if( 
-                                !$field['default']
-                                && ! in_array( '', array_keys($field['options'])) 
+                                ! in_array( '', array_keys($field['options'])) 
                             ){
                                 // Add an empty option to the beginning of the options array
                                 $field['options'] = array_merge(['' => ''], $field['options']);
@@ -367,4 +366,3 @@ class WooCommerceSettingsMagic
     }
 }
 endif;
-
