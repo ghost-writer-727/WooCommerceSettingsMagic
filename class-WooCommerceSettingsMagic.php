@@ -315,8 +315,6 @@ class WooCommerceSettingsMagic
             ];
         }
 
-        error_log( print_r( $normalized_fields, true ));
-
         return $normalized_fields;
     }
 
@@ -355,7 +353,6 @@ class WooCommerceSettingsMagic
 
     public function add_settings()
     {
-        error_log( print_r( $this->fields, true ));
         woocommerce_admin_fields($this->fields);
     }
 
