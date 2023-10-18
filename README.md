@@ -56,7 +56,7 @@ The `sectionend` type denotes the end of a section. If missing, it will be autog
 - **`type`**: Must be set to `'sectionend'`.
 - **`id`**: Identifier for the field. Defaults to previous title field id + "_end". (Optional)
 
-### Common Field Options
+### Non-Section Field Options
 
 These options can generally be applied to all non-section field types:
 
@@ -70,13 +70,11 @@ These options can generally be applied to all non-section field types:
 - **`desc_tip`**: Boolean to show description as tooltip. (Optional)
 - **`custom_attributes`**: Any additional attributes in associative array format. (Optional)
 
-### Non-Section Field Types
-
 #### Text, Textarea, Number, Password, Date, Color
 
 For these types, all common field options can be used.
 
-#### Select, Radio
+#### Radio
 
 - **`options`**: An associative array of available options. (Optional)
 
@@ -84,10 +82,15 @@ For these types, all common field options can be used.
 
 - **`checkboxgroup`**: Values can be `'start'`, `'middle'` or `'end'`. Starting checkbox `'title'` will serve as the group title. Grouped checkboxes `'desc'` will serve as the checkbox text. (Optional)
 
-#### Multiselect
+#### Select, Multiselect
 
 - **`options`**: An associative array of available options. (Optional)
-- **`select_buttons`**: Boolean, to use buttons instead of dropdown. (Optional)
+- **`select2`**: Boolean, to use Select2 interface instead of dropdown. (Optional, default `false``)
+- **`allowClear`**: Boolean, use with Select2 to disable Clear All button (Optional, default `true``)
+- **`default`**: If unset, `default` behavior varies as follows:
+- - For `Select` fields with `'select2' => true`, if `default` property is unset, its value will be none or `''`.
+- - For `Select` fields with `'select2' => false` or no `select2` flag, if `default` property is unset, its value will be the first option in the `options` array.
+- - All `Multiselect` fields, if `default` property is unset, its value will be none or `''`.
 
 ## Methods
 
@@ -99,13 +102,13 @@ Static method for adding a new settings tab.
 
 ### `get_settings()`
 
-Returns the settings array for the instance.
+Returns the settings array for the instance. Only available when using OOP technique.
 
 - **Return**: The settings array
 
 ### `get($field_id)`
 
-Fetches the value of a specific setting field.
+Fetches the value of a specific setting field. Only available when using OOP technique.
 
 - **Return**: The value of the field.
 
@@ -200,7 +203,7 @@ $fields = [
             'option1' => 'Option 1',
             'option2' => 'Option 2',
         ],
-        'select2' => true,
+        'select2' => true, // Optional, defaults to false
         'default' => '', // Optional, defaults to '' if unset
     ],
 
@@ -266,10 +269,10 @@ $fields = [
             'apple' => 'Apple',
             'orange' => 'Orange',
         ],
-        'select2' => true,
+        'select2' => true, // Optional, defaults to false
+        'allowClear' => false, // Optional, defaults to true
         'default' => [] // Optional, can be a single string or array of strings. Defaults to an empty array if unset
     ],
-
 ];
 
 // Using Static Method

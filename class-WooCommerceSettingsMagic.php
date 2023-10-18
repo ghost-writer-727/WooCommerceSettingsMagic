@@ -198,6 +198,10 @@ class WooCommerceSettingsMagic
                             // Add a placeholder that can be read in with select2 initialization
                             $field['custom_attributes']['data-placeholder'] = $field['placeholder'] ?? 'Select an option...';
 
+                            // Add a flag to allow clearing all selections to be read in with select2 initialization
+                            $field['custom_attributes']['data-allowClear'] = $field['allowClear'] ?? true;
+                            unset( $field['allowClear'] );
+
                             // Set the default default to ''
                             if( ! in_array($field['default'], array_keys($field['options'])) ){
                                 $field['default'] = '';
@@ -238,8 +242,9 @@ class WooCommerceSettingsMagic
                             // Add a placeholder that can be read in with select2 initialization
                             $field['custom_attributes']['data-placeholder'] = $field['placeholder'] ?? 'Select an option...';
 
-                            // Add a default value that can be read in with select2 initialization
-                            $field['custom_attributes']['data-default'] = $field['default'];
+                            // Add a flag to allow clearing all selections to be read in with select2 initialization
+                            $field['custom_attributes']['data-allowClear'] = $field['allowClear'] ?? false;
+                            unset( $field['allowClear'] );
                         }
                     } else if( $field['type'] == 'radio' ){
                         // Radio default needs to be a string
