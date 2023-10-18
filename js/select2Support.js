@@ -7,14 +7,5 @@ jQuery(document).ready(function($) {
             placeholder: placeholderText,
             allowClear: true
         });
-
-        // If no value or if value is an empty array
-        if ( !$(this).val() || $(this).val().length === 0) {
-            console.log('No value')
-            $(this).val(null).trigger('change');
-            $(this).val(null).trigger('change.select2');
-        } else {
-            console.log($(this).val(), 'Value found')
-        }
     });
 });
