@@ -4,42 +4,26 @@ if (!class_exists('WooCommerceSettingsMagic')) :
 class WooCommerceSettingsMagic
 {
     /**
-     * @var string
-     * The name of the tab
+     * User defined properties
      */
-    private $tab_name;
+    private string $tab_name;
+    private string $slug;
 
     /**
-     * @var string
-     * 
-     * The slug of the tab and the option name in the database
+     * Internal properties
      */
-    private $slug;
+    const SELECT2_CLASS = 'wcsm-apply-select2';
+    private string $prefix;
+    private array $settings_cache;
+    private bool $select2_enabled;
+    private string $current_section_id;
+    private array $all_ids;
+    private array $prepared_fields;
+    private int $auto_index;
 
     /**
-     * @var array
-     * 
-     * Each setting field must have at least an id or a title
-     * All other parameters required by woocommerce_admin_fields() will be generated automatically if missing
-     */
-    private $fields;
-
-    /**
-     * @var array
-     * 
-     * An associative array of the settings values
-     */
-    private $settings_cache = [];
-
-    /**
-     * @var bool
-     * 
-     * Whether or not to enable Select2 support
-     */
-    private $select2_enabled;
-
-    /**
-     * Quick static method for adding a new settings tab and retrieving the settings array
+     * A magical static method for simultaneously adding a new settings tab 
+     * and retrieving the settings array... PRESTO CHANGO!
      * 
      * @param string $tab_name
      * @param string $slug
@@ -51,234 +35,161 @@ class WooCommerceSettingsMagic
     public static function presto($tab_name, $slug, $fields)
     {
         $instance = new self($tab_name, $slug, $fields);
-        return $instance->settings_cache[$slug] ?? false;
+        return $instance->settings_cache ?? false;
     }
 
     /**
-     * Traditional method for building a new settings tab
+     * OOP method for building a new settings tab
      * 
      * @param string $tab_name
      * @param string $slug
      * @param array $fields
      */
-    public function __construct($tab_name, $slug, $fields)
-    {
-        $this->tab_name = $tab_name;
+    public function __construct(string $tab_name, string $slug, array $fields){
+        if( !preg_match('/^[a-z0-9-_]+$/', $slug) ){
+            throw new Exception( __CLASS__ . ': $slug must be lowercase alphanumeric with dashes or underscores only');
+        }
         $this->slug = $slug;
-        $this->fields = $this->normalize_fields($fields);
+        $this->tab_name = $tab_name;
+        $this->prefix = "wcsm-{$this->slug}-";
+        $this->select2_enabled = false;
+        $this->current_section_id = '';
+        $this->all_ids = [];
+        $this->prepared_fields = [];
+        $this->auto_index = 0;
 
-        $this->init();
+        $this->prepare_fields($fields);
+        $this->prepare_settings_cache();
+        $this->add_hooks();
     }
 
     /**
-     * For use with traditional method
-     * 
      * @return array The settings array
      */
     public function get_settings(){
-        return $this->settings_cache[$this->slug] ?? [];
+        return $this->settings_cache;
     }
 
     /**
-     * For use with traditional method
-     * 
      * @param string $field_id The id of the field to retrieve
      * 
      * @return mixed The value of the field
      * @throws Exception if the field does not exist
      */
     public function get($field_id){
-        if( ! isset($this->settings_cache[$this->slug][$field_id]) ){
+        if( ! isset($this->settings_cache[$field_id]) ){
             throw new Exception( __CLASS__ . ': $field_id "' . $field_id . '" does not exist');
         }
 
-        return $this->settings_cache[$this->slug][$field_id];
+        return $this->settings_cache[$field_id];
     }
 
-    private function init()
+    private function add_hooks()
     {
-        // Add Select2 support
-        add_action('admin_enqueue_scripts', [$this, 'add_select2_support']);
-
-        // Register new settings tab
+        add_action('admin_enqueue_scripts', [$this, 'add_select2_js']);
         add_filter('woocommerce_settings_tabs_array', [$this, 'add_tab'], 50);
-
-        // Add the settings to the tab
         add_action('woocommerce_settings_' . $this->slug, [$this, 'add_settings']);
-
-        // Save the settings
         add_action('woocommerce_update_options_' . $this->slug, [$this, 'save_settings']);
-
-        // Fetch and cache the settings from the DB
-        $saved_settings = get_option($this->slug, []);
-        $defaults = [];
-
-        // Extract default values
-        foreach ($this->fields as $key => $field) {
-            if (isset($field['default'])) {
-                $defaults[$key] = $field['default'];
-            }
-        }
-
-        // Merge saved settings with defaults
-        $this->settings_cache[$this->slug] = array_merge($defaults, $saved_settings);    
     }
 
-    private function normalize_fields($fields){
-        // Stores which section we are currently in so we can add sectionends automatically
-        $current_section_id = '';
-
-        // Stores all ids to check for duplicates
-        $all_ids = [];
-
-        // Rebuild all fields with normalized parameters so we can insert missing sectionends automatically
-        $normalized_fields = [];
-        foreach( $fields as $key => $field ){
-            // If we are not in a section and this field isn't a title, add a title automatically
-            if( !$current_section_id && $field['type'] !== 'title' ){
-                // Must be a random ID in case we have multiple instances with this scenario
-                $index = array_search($key, array_keys($fields)) . '_' . rand(100000, 999999);
-                $auto_title_key = 'settings_title_auto_generated_' . $index;
-                $normalized_fields[$auto_title_key] = [
-                    'type' => 'title',
-                    'title' => 'Settings',
-                    'desc' => '',
-                    'id' => $auto_title_key,
-                ];
-                $current_section_id = $normalized_fields[$auto_title_key]['id'];
+    /**
+     * Fetch the settings from the DB and cache them
+     */
+    private function prepare_settings_cache(){
+        $non_settings_types = ['title','sectionend'];
+        foreach( $this->prepared_fields as $field ){
+            if( in_array($field['type'], $non_settings_types) ){
+                continue;
             }
+            $value = get_option($field['id'], $field['default'] ?? '');
+            $key = $this->remove_prefix($field['id']);
+            $this->settings_cache[$key] = $value;
+        }
+    }
 
-            // Convert non-associative array keys to 
-            if( is_int($key) ){
-                $key = $field['id'] ?? sanitize_title($field['title']) . '_' . rand(100000, 999999);
+    /**
+     * Populates the prepared_fields property with the correct format
+     * 
+     * @param array $fields - compatible with woocommerce_admin_fields()
+     */
+    private function prepare_fields($fields){
+        foreach( $fields as $field_key => $field ){
+            // Everything goes within a section
+            if( !$this->current_section_id && $field['type'] !== 'title' ){
+                $this->build_section_start();
             }
 
             switch( $field['type'] ?? '' ){
                 case 'title':
-                    if( $current_section_id ){
-                        // If missing previous sectionend, add it automatically before the new section
-                        $end_id = $current_section_id . '_end';
-                        $normalized_fields[$end_id] = [
-                            'type' => 'sectionend',
-                            'id' => $end_id,
-                        ];
-                    }
-
-                    $normalized_fields[$key] = [
+                    // Never nest sections
+                    $this->maybe_build_section_end();
+                    
+                    // Build the new section
+                    $id = $field['id'] ?? sanitize_title($field['title']) . '_section';
+                    $this->prepared_fields[$field_key] = [
                         'type'  => $field['type'],
                         'title' => $field['title'] ?? '',
                         'desc'  => $field['desc'] ?? '',
-                        'id'    => $field['id'] ?? sanitize_title($field['title']) . '_section',
+                        'id'    => $id,
                     ];
-                    $current_section_id = $normalized_fields[$key]['id'];
+                    $this->all_ids[] = $id;
+                    $this->current_section_id = $id;
                     break;
                 case 'sectionend':
-                    $normalized_fields[$key] = [
+                    // Close the previous section
+                    $this->prepared_fields[$field_key] = [
                         'type'  => $field['type'],
-                        'id'    => $field['id'] ?? $current_section_id . '_end',
+                        'id'    => $field['id'] ?? $this->current_section_id . '_end',
                     ];
-                    $current_section_id = '';
+                    $this->current_section_id = '';
                     break;
                 default:
-                // Here we must set defaults for various field types to match what appears when first loaded up, because defaults are used when generating the $settings_cache array. This way, what is visible will match the actual value returned when getting settings via this class, even prior to the first click of the "Save Changes" button.
-                    if( $field['type'] == 'select' ){
-                        $field['default'] = $field['default'] ?? false;
-                        $field['options'] = $field['options'] ?? [];
-
-                        if( $field['select2'] ?? false ){
-                            // Apply select2 to this field
-                            $this->select2_enabled = true;
-                            $field['class'] = $field['class'] ?? '';
-                            $field['class'] .= ' wcsm-apply-select2';
-                            unset( $field['select2'] );
-
-                            // Ensure we have custom_attributes created
-                            $field['custom_attributes'] = $field['custom_attributes'] ?? [];
-
-                            // Add a placeholder that can be read in with select2 initialization
-                            $field['custom_attributes']['data-placeholder'] = $field['placeholder'] ?? 'Select an option...';
-
-                            // Add a flag to allow clearing all selections to be read in with select2 initialization
-                            $field['custom_attributes']['data-allowClear'] = $field['allowClear'] ?? true;
-                            unset( $field['allowClear'] );
-
-                            // Set the default default to ''
-                            if( ! in_array($field['default'], array_keys($field['options'])) ){
-                                $field['default'] = '';
-                            }
-                            
-                            if( 
-                                ! in_array( '', array_keys($field['options'])) 
-                            ){
-                                // Add an empty option to the beginning of the options array
-                                $field['options'] = array_merge(['' => ''], $field['options']);
-                            }
-                        } else {
-                            // If this isn't a select2, then default the selected option to the first one, since it will appear as selected when viewing the settings page, even if it hasn't been saved.
-                            if( ! in_array($field['default'], array_keys($field['options'])) ){
-                                // if there are any options
-                                if( count($field['options']) ){
-                                    // Set the default to the first option
-                                    $field['default'] = array_key_first($field['options']);
-                                }
-                            }
-                        }
-                    } else if( $field['type'] == 'multiselect' ){
-                        // Multiselect default needs to be an array
-                        $field['default'] = (array) ( $field['default'] ?? [] );
-
-                        // Add Select2 support
-                        if( $field['select2'] ?? false ){
-                            // Apply select2 to this field
-                            $this->select2_enabled = true;
-                            $field['class'] = $field['class'] ?? '';
-                            $field['class'] .= ' wcsm-apply-select2';
-                            unset( $field['select2'] );
-
-                            // Ensure we have custom_attributes created
-                            $field['custom_attributes'] = $field['custom_attributes'] ?? [];
-
-                            // Add a placeholder that can be read in with select2 initialization
-                            $field['custom_attributes']['data-placeholder'] = $field['placeholder'] ?? 'Select an option...';
-
-                            // Add a flag to allow clearing all selections to be read in with select2 initialization
-                            $field['custom_attributes']['data-allowClear'] = $field['allowClear'] ?? false;
-                            unset( $field['allowClear'] );
-                        }
-                    } else if( $field['type'] == 'radio' ){
-                        // Radio default needs to be a string
-                        $field['default'] = (string) ( $field['default'] ?? '' );
-                        if( !in_array($field['default'], array_keys($field['options'])) ){
-                            // if there are any options
-                            if( count($field['options']) ){
-                                // Set the default to the first option
-                                $field['default'] = array_key_first($field['options']);
-                            }
-                        }
-                    } else if( $field['type'] == 'checkbox'){
-                        // Checkbox default needs to be a string
-                        $field['default'] = (string) ( $field['default'] ?? '' );
-                        if( !in_array($field['default'], ['yes', 'no']) ){
-                            $field['default'] = 'no';
-                        }
+                    if( ! $field['id'] ){
+                        throw new Exception( __CLASS__ . ': $field[\'id\'] is required');                    
                     }
 
-                    $normalized_fields[$key] = [
-                        // One of these 2 parameters are requried to build the other if missing.
-                        'title' => $field['title'] ?? $field['id'] ?? '',
-                        'id'    => $field['id'] ?? sanitize_title($field['title']),
+                    if( in_array($field['id'], $this->all_ids) ){
+                        throw new Exception( __CLASS__ . ': $field[\'id\'] "' . $field['id'] . '" already exists');
+                    }
 
-                        // Optional Parameters
-                        'type'  => $field['type'] ?? 'text',
-                        'desc'  => $field['desc'] ?? '',
-                        'default' => $field['default'] ?? '',
-                        'placeholder' => $field['placeholder'] ?? '',
-                        'class' => $field['class'] ?? '',
-                        'desc_tip' => $field['desc_tip'] ?? false,
+                    if( $field['type'] == 'select' ){
+                        if( $field['select2'] ?? false ){
+                            $field = $this->process_field_add_select2($field);
+                            $field = $this->process_field_assign_select_default($field, false);
+                        } else {
+                            $field = $this->process_field_assign_select_default($field);
+                        }
+
+                    } else if( $field['type'] == 'multiselect' ){
+                        if( $field['select2'] ?? false ){
+                            $field = $this->process_field_add_select2($field);
+                        }
+                        $field = $this->process_field_assign_select_default($field, false);
+
+                    } else if( $field['type'] == 'radio' ){
+                        $field = $this->process_field_assign_select_default($field);
+
+                    } else if( $field['type'] == 'checkbox'){
+                        $field = $this->process_field_assign_checkbox_default($field);
+
+                    }
+
+                    $this->prepared_fields[$field_key] = [
+                        // Must have id
+                        'id' => $field['id'],
+                        
+                        // Optional
+                        'title'             => $field['title'] ?? $field['id'],
+                        'type'              => $field['type'] ?? 'text',
+                        'desc'              => $field['desc'] ?? '',
+                        'default'           => $field['default'] ?? '',
+                        'placeholder'       => $field['placeholder'] ?? '',
+                        'class'             => $field['class'] ?? '',
+                        'desc_tip'          => $field['desc_tip'] ?? false,
                         'custom_attributes' => $field['custom_attributes'] ?? [],
                     ];
 
-                    // Look for any other custom parameters and add them to the normalized array
+                    // Remove processed parameters
                     unset( 
                         $field['title'], 
                         $field['id'], 
@@ -290,48 +201,235 @@ class WooCommerceSettingsMagic
                         $field['desc_tip'], 
                         $field['custom_attributes']
                     );
+
+                    // Include outlying parameters
                     foreach( $field as $param => $value ){
-                        $normalized_fields[$key][$param] = $value;
+                        $this->prepared_fields[$field_key][$param] = $value;
                     }
 
-                    // throw error if $field id && title were empty
-                    if( ! $normalized_fields[$key]['id'] ){
-                        throw new Exception( __CLASS__ . ': $field needs an id or title');
-                    }
-
-                    // Throw error if id already exists
-                    if( in_array($normalized_fields[$key]['id'], $all_ids) ){
-                        throw new Exception( __CLASS__ . ': $field[\'id\'] "' . $normalized_fields[$key]['id'] . '" already exists');
-                    }
-                    
                     break;
             }
-            // Store ids for duplicate checking
-            $all_ids[] = $normalized_fields[$key]['id'];
+
+            $this->all_ids[] = $this->prepared_fields[$field_key]['id'];
         }
 
-        // If missing the final sectionend, add it automatically
-        if( $current_section_id ){
-            $end_id = $current_section_id . '_end';
-            $normalized_fields[$end_id] = [
+        $this->maybe_build_section_end();
+
+        $this->prefix_ids();
+    }
+
+    /**
+     * Prepares a new section/title field
+     */
+    private function build_section_start(){
+        $id = $this->get_unique_title_id();
+
+        $this->prepared_fields[$id] = [
+            'type' => 'title',
+            'title' => 'Settings',
+            'desc' => '',
+            'id' => $id,
+        ];
+        $this->all_ids[] = $id;
+        $this->current_section_id = $id;
+    }
+
+    /**
+     * @return string A unique id for a title field
+     */
+    private function get_unique_title_id(){
+        // Recursively increment up until it finds a unique id
+        $id = "section_{$this->slug}-{$this->auto_index}";
+        while( in_array( $id, $this->all_ids ) ){
+            $this->auto_index++;
+            $id = "section_{$this->slug}-{$this->auto_index}";
+        }
+        return $id;
+    }
+
+    /**
+     * Prepares a sectionend field, if necessary
+     */
+    private function maybe_build_section_end(){
+        if( $this->current_section_id ){
+            $end_id = $this->current_section_id . '_end';
+            $this->prepared_fields[$end_id] = [
                 'type' => 'sectionend',
                 'id' => $end_id,
             ];
+            $this->current_section_id = '';
         }
-
-        return $normalized_fields;
     }
 
-    public function add_select2_support(){
-        if( 
-            // Only do this if Select2 is requested
-            !$this->select2_enabled
+    /**
+     * @param array $field
+     * 
+     * @return array The processed field
+     */
+    private function process_field_add_select2( $field ){
+        // Flag select2 js to be enqueued
+        $this->select2_enabled = true;
+        
+        // Apply class to be read in by our select2 function
+        $field['class'] = ($field['class'] ?? '') . ' ' . self::SELECT2_CLASS;
+        
+        // Add flags for custom attributes to be read in with our select2 logic
+        $field['custom_attributes'] = $field['custom_attributes'] ?? [];
+        $field['custom_attributes']['data-placeholder'] = $field['placeholder'] ?? 'Select an option...';
+        $field['custom_attributes']['data-allowClear'] = $field['allowClear'] ?? true;
+        
+        // Remove the non-standard parameters to prevent future conflicts
+        unset( $field['select2'], $field['allowClear'] );
 
-            // Only do this if we are on the correct page
-            || !isset($_GET['page']) 
-            || $_GET['page'] !== 'wc-settings' 
-            || !isset($_GET['tab']) 
-            || $_GET['tab'] !== $this->slug 
+        return $field;
+    }
+
+    /**
+     * @param array $field
+     * @param bool $autoselect - whether or not to autoselect the first option
+     * 
+     * @return array The processed field
+     */
+    private function process_field_assign_select_default($field, $autoselect = true){
+        // Check if default is already assigned & is a valid option.
+        if( 
+            isset( $field['default'], $field['options'] ) 
+            && is_array( $field['options'] )
+            && in_array($field['default'], array_keys($field['options']))
+        ){
+            return $this->maybe_add_empty_option($field);
+        }
+
+        // Define maybe missing parameters
+        $field['default'] = $field['default'] ?? '';
+        $field['options'] = $field['options'] ?? [];
+
+        // Set the default to the first option
+        if( $autoselect ){
+            if( count($field['options']) ){
+                $field['default'] = array_key_first($field['options']);
+            } else {
+                // Returns null if no options are populated
+                $field['default'] = null;
+            }
+        } else {
+            $field = $this->maybe_add_empty_option($field);
+            $field['default'] = '';
+        }
+
+        return $field;
+    }
+
+    /**
+     * Checks if the field type is valid for an empty option and adds one if necessary
+     * 
+     * @param array $field
+     * 
+     * @return array The potentially updated field
+     */
+    private function maybe_add_empty_option($field){
+        if( 
+            $field['type'] == 'select' 
+            && strpos($field['class'], self::SELECT2_CLASS) !== false 
+        ){
+            return $this->add_empty_option($field);
+        }
+        return $field;
+    }
+
+    /**
+     * Adds an empty option to the beginning of the options array, if not present
+     * 
+     * @param array $field
+     * 
+     * @return array The updated field
+     */
+    private function add_empty_option($field){
+        if( ! in_array( '', array_keys($field['options']) ) ){
+            $field['options'] = array_merge(['' => ''], $field['options']);
+        }
+        return $field;
+    }
+
+    /**
+     * Conform the default value to a valid checkbox value
+     * 
+     * @param array $field
+     * 
+     * @return array The processed field
+     */
+    private function process_field_assign_checkbox_default($field){
+        $yes = 'yes';
+        if( 
+            isset($field['default']) &&  
+            ( $field['default'] === $yes || $field['default'] === true )
+        ){
+            $field['default'] = $yes;
+        } else {
+            $field['default'] = '';
+        }
+
+        return $field;
+    }
+
+    /**
+     * Preppend the slug to the field ids to prevent conflicts
+     */
+    private function prefix_ids(){
+        foreach( $this->prepared_fields as &$field ){
+            $field['id'] = $this->prefix . $field['id'];
+        }
+    }
+
+    /**
+     * Remove the preppended slug from the field ids
+     * 
+     * @param string $id
+     * 
+     * @return string The processed id
+     */
+    private function remove_prefix($id){
+        if( substr($id, 0, strlen($this->prefix)) === $this->prefix ){
+            return substr($id, strlen($this->prefix));
+        }
+        return $id;
+    }
+
+    /**
+     * Callback for adding a new WooCommerce settings tab
+     */
+    public function add_tab($tabs){
+        $tabs[$this->slug] = $this->tab_name;
+        return $tabs;
+    }
+    
+    /**
+     * Callback for adding fields to the new WooCommerce settings tab
+     */
+    public function add_settings(){
+        error_log( $this->slug );
+        woocommerce_admin_fields($this->prepared_fields);
+    }
+    
+    /**
+     * Callback for saving the new WooCommerce settings tab
+     */
+    public function save_settings(){
+        woocommerce_update_options($this->prepared_fields);
+    }
+
+    /**
+     * Callback for enqueuing Select2 JS when needed
+     */
+    public function add_select2_js(){
+        $page = sanitize_text_field($_GET['page'] ?? '');
+        $tab = sanitize_text_field($_GET['tab'] ?? '');
+
+        // Skip this if our Select2 is not required
+        if( 
+            !$this->select2_enabled
+            || $page !== 'wc-settings' 
+            || $tab !== $this->slug 
         ){
             return;
         }
@@ -347,22 +445,6 @@ class WooCommerceSettingsMagic
             filemtime(plugin_dir_path(__FILE__) . 'js/select2Support.js'),
             true
         );
-    }
-
-    public function add_tab($tabs)
-    {
-        $tabs[$this->slug] = $this->tab_name;
-        return $tabs;
-    }
-
-    public function add_settings()
-    {
-        woocommerce_admin_fields($this->fields);
-    }
-
-    public function save_settings()
-    {
-        woocommerce_update_options($this->fields);
     }
 }
 endif;

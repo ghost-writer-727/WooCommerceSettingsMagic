@@ -80,6 +80,7 @@ For these types, all common field options can be used.
 
 #### Checkbox
 
+- **`default`**: Values `true` or `'yes'` will be converted to `'yes'`. All others will be converted to `'no'`. (Optional)
 - **`checkboxgroup`**: Values can be `'start'`, `'middle'` or `'end'`. Starting checkbox `'title'` will serve as the group title. Grouped checkboxes `'desc'` will serve as the checkbox text. (Optional)
 
 #### Select, Multiselect
@@ -203,8 +204,9 @@ $fields = [
             'option1' => 'Option 1',
             'option2' => 'Option 2',
         ],
-        'select2' => true, // Optional, defaults to false
-        'default' => '', // Optional, defaults to '' if unset
+        'select2' => true,
+        'default' => 'option1', // Optional, defaults to '' if unset
+        'allowClear' => false, // Optional, defaults to true
     ],
 
     // Radio buttons
@@ -224,7 +226,7 @@ $fields = [
         'id' => 'checkbox_field_custom_id',
         'type' => 'checkbox',
         'title' => 'Checkbox',
-        'default' => 'no', // Optional, defaults to 'no' if unset
+        'default' => 'no', // Optional, defaults to 'no'
     ],
 
     // Checkbox group
@@ -233,12 +235,14 @@ $fields = [
         'type' => 'checkbox', 
         'title' => 'Checkbox Group', // Checkbox group label
         'desc'	=> 'Checkbox 1', // Checkbox label
+        'default' => 'yes', // Optional, defaults to 'no'
         'checkboxgroup' => 'start' // Optional
     ],
     [
         'id' => 'checkbox2__custom_id', 
         'type' => 'checkbox', 
         'desc'	=> 'Checkbox 2',
+        'default' => true, // Optional, defaults to 'no'
         'checkboxgroup' => 'middle', // Required if checkbox is in the middle of the group
     ],
     [
@@ -270,13 +274,12 @@ $fields = [
             'orange' => 'Orange',
         ],
         'select2' => true, // Optional, defaults to false
-        'allowClear' => false, // Optional, defaults to true
-        'default' => [] // Optional, can be a single string or array of strings. Defaults to an empty array if unset
+        'default' => [], // Optional, can be a single string or array of strings. Defaults to an empty array if unset
     ],
 ];
 
 // Using Static Method
-$settings = WooCommerceSettingsMagic::presto('Custom Tab', 'custom_tab', $fields);
+$settings = WooCommerceSettingsMagic::presto('Custom Tab', 'unique_slug', $fields);
 
 // Access the settings via your ids
 if( $settings['radio_field_custom_id'] == 'a' ){
