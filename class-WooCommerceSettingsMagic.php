@@ -407,7 +407,6 @@ class WooCommerceSettingsMagic
      * Callback for adding fields to the new WooCommerce settings tab
      */
     public function add_settings(){
-        error_log( $this->slug );
         woocommerce_admin_fields($this->prepared_fields);
     }
     
